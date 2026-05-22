@@ -1,0 +1,50 @@
+{
+  "uuid": "0e7e5867-9948-402d-aadf-e1210c56eed4",
+  "shortName": "MTG Wiki",
+  "longName": "MTG Card Wiki",
+  "companyName": "magic-pebble",
+  "versionLabel": "1.0.0",
+  "sdkVersion": "3",
+  "targetPlatforms": ["emery"],
+  "watchapp": {
+    "watchface": false
+  },
+  "enableMultiJS": true,
+  "capabilities": [],
+  "appKeys": {
+    "Action":        0,
+    "FilterColor":   1,
+    "FilterCmc":     2,
+    "FilterType":    3,
+    "FilterAlpha":   4,
+    "ListOffset":    5,
+    "CardId":        6,
+    "Status":        7,
+    "CardName":      8,
+    "CardManaCost":  9,
+    "CardTypeLine":  10,
+    "CardOracleText":11,
+    "CardPT":        12,
+    "CardColors":    13,
+    "ListCount":     14,
+    "HasMore":       15,
+    "ListCard0Name": 16,
+    "ListCard0Id":   17,
+    "ListCard1Name": 18,
+    "ListCard1Id":   19,
+    "ListCard2Name": 20,
+    "ListCard2Id":   21,
+    "ListCard3Name": 22,
+    "ListCard3Id":   23,
+    "ListCard4Name":      24,
+    "ListCard4Id":        25,
+    "ImageChunkOffset":   26,
+    "ImageWidth":         27,
+    "ImageHeight":        28,
+    "ImageDone":          29,
+    "ImageData":          30
+  },
+  "resources": {
+    "media": []
+  }
+}
