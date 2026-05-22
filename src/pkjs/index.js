@@ -25,6 +25,22 @@ var ALPHA_RANGES = [
   ['A','D'], ['E','H'], ['I','L'], ['M','P'], ['Q','T'], ['U','Z']
 ];
 
+// ── Image proxy (optional, used on iOS) ────────────────────────────────────
+// The watch displays cropped artwork at exactly 200×75 in Pebble's 2-bit-per-channel
+// palette. On Android the Pebble JS environment is a WebView and has Canvas + Image,
+// so we render & quantize locally (see fetchAndSendImage below). On iOS the JS
+// environment is JavaScriptCore with no DOM — neither Image nor Canvas exist.
+//
+// The recommended iOS approach is a tiny stateless image-proxy worker (Cloudflare
+// Workers, fly.io, or Vercel — all free for this kind of traffic) that:
+//   1. Takes ?url=<scryfall_art_crop> as input
+//   2. Fetches, resizes to 200×75, quantizes each pixel to 0xC0|(R<<4)|(G<<2)|B
+//   3. Returns raw bytes as application/octet-stream
+//
+// Drop your worker URL below to enable iOS art. Leave empty to fall back to
+// the diagonal-hatch placeholder used by card_view_window.
+var IMAGE_PROXY_URL = '';   // e.g. 'https://mtg-pebble.example.workers.dev/quantize'
+
 // ── Card cache ─────────────────────────────────────────────────────────────
 var cardCache = [];
 var nextPageUrl = null;
@@ -43,7 +59,7 @@ function cacheCard(c) {
   };
 }
 
-// ── Network helper ─────────────────────────────────────────────────────────
+// ── Network helpers ────────────────────────────────────────────────────────
 function get(url, cb) {
   var xhr = new XMLHttpRequest();
   xhr.open('GET', url, true);
@@ -59,7 +75,19 @@ function get(url, cb) {
   xhr.send();
 }
 
-// ── Image pipeline (Android / WebView only) ────────────────────────────────
+function getBinary(url, cb) {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', url, true);
+  xhr.responseType = 'arraybuffer';
+  xhr.onload = function () {
+    if (xhr.status === 200) cb(null, new Uint8Array(xhr.response));
+    else cb('HTTP ' + xhr.status + ' for ' + url);
+  };
+  xhr.onerror = function () { cb('Network error'); };
+  xhr.send();
+}
+
+// ── Image pipeline ─────────────────────────────────────────────────────────
 var ART_W = 200;
 var ART_H = 75;
 var CHUNK_SIZE = 1700;
@@ -92,18 +120,17 @@ function sendImageChunks(pixels) {
   next();
 }
 
-function fetchAndSendImage(artUrl) {
-  if (!artUrl) return;
-  // Canvas API is only available in Android WebView context
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    console.log('Image: no Canvas API (iOS), skipping');
-    return;
-  }
+function hasCanvas() {
+  return typeof window !== 'undefined' && typeof document !== 'undefined' &&
+         typeof Image === 'function';
+}
+
+function fetchViaCanvas(artUrl) {
   var img = new Image();
   img.crossOrigin = 'Anonymous';
   img.onload = function () {
     try {
-      // Center-fill crop: scale to fill ART_W×ART_H, crop excess
+      // Center-fill crop: scale to fill ART_W×ART_H, crop excess.
       var srcAspect = img.width / img.height;
       var dstAspect = ART_W / ART_H;
       var sx, sy, sw, sh;
@@ -133,6 +160,29 @@ function fetchAndSendImage(artUrl) {
   img.src = artUrl;
 }
 
+function fetchViaProxy(artUrl) {
+  var proxyUrl = IMAGE_PROXY_URL + '?url=' + encodeURIComponent(artUrl);
+  getBinary(proxyUrl, function (err, bytes) {
+    if (err) { console.log('Image proxy error: ' + err); return; }
+    if (bytes.length !== ART_W * ART_H) {
+      console.log('Proxy returned ' + bytes.length + ' bytes, expected ' + (ART_W * ART_H));
+      return;
+    }
+    sendImageChunks(bytes);
+  });
+}
+
+function fetchAndSendImage(artUrl) {
+  if (!artUrl) return;
+  if (hasCanvas()) {
+    fetchViaCanvas(artUrl);
+  } else if (IMAGE_PROXY_URL) {
+    fetchViaProxy(artUrl);
+  } else {
+    console.log('Image: no Canvas (iOS) and no IMAGE_PROXY_URL configured — skipping.');
+  }
+}
+
 // ── Senders ────────────────────────────────────────────────────────────────
 function sendError(msg) {
   console.log('ERR: ' + msg);
@@ -149,6 +199,7 @@ function sendCard(c) {
 
   Pebble.sendAppMessage({
     Status:         STATUS_CARD,
+    CardId:         (c.id || '').substring(0, 36),
     CardName:       c.name.substring(0, 60),
     CardManaCost:   c.mana_cost.substring(0, 45),
     CardTypeLine:   c.type_line.substring(0, 60),
@@ -184,14 +235,20 @@ function sendList(offset) {
 
 // ── Query builder ──────────────────────────────────────────────────────────
 function buildQuery(f) {
-  var range = ALPHA_RANGES[f.alpha] || ['A','Z'];
   var cmcPart = (f.cmc === 7) ? 'cmc>=7' : ('cmc=' + f.cmc);
-
+  var namePart;
+  if (f.letter && f.letter.length === 1) {
+    // Exact-letter narrowing wins over the bucket range.
+    namePart = 'name:/^' + f.letter + '/i';
+  } else {
+    var range = ALPHA_RANGES[f.alpha] || ['A','Z'];
+    namePart = 'name:/^[' + range[0] + '-' + range[1] + ']/i';
+  }
   return [
     COLOR_QUERIES[f.color] || 'c:W',
     cmcPart,
     't:' + (TYPE_NAMES[f.type] || 'creature'),
-    'name:/^[' + range[0] + '-' + range[1] + ']/'
+    namePart
   ].join(' ');
 }
 
@@ -259,10 +316,11 @@ Pebble.addEventListener('appmessage', function (e) {
     handleRandom();
   } else if (action === ACTION_SEARCH) {
     handleSearch({
-      color: p.FilterColor,
-      cmc:   p.FilterCmc,
-      type:  p.FilterType,
-      alpha: p.FilterAlpha
+      color:  p.FilterColor,
+      cmc:    p.FilterCmc,
+      type:   p.FilterType,
+      alpha:  p.FilterAlpha,
+      letter: p.FilterLetter || ''
     }, p.ListOffset || 0);
   } else if (action === ACTION_GET_CARD) {
     handleGetCard(p.CardId);

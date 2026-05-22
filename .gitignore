@@ -1,0 +1,31 @@
+# Pebble build artifacts
+build/
+*.pbw
+*.pbz
+.lock-waf*
+.waf-*
+pebble-info.json
+
+# Auto-generated resource metadata
+src/resources/*.png.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Node / JS toolchain (pkjs runtime tools)
+node_modules/
+
+# Editor & OS noise
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/worktrees/
+.claude/settings.local.json

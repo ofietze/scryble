@@ -1,12 +1,14 @@
 #include <pebble.h>
 #include "state.h"
 #include "comm.h"
+#include "collection.h"
 #include "main_menu_window.h"
 
 AppState g_state = {0};
 
 static void init(void) {
   comm_init();
+  collection_init();
   main_menu_window_push();
 }
 

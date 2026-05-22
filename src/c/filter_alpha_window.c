@@ -1,7 +1,6 @@
 #include <pebble.h>
 #include "filter_alpha_window.h"
-#include "card_list_window.h"
-#include "comm.h"
+#include "filter_letter_window.h"
 #include "state.h"
 
 static Window    *s_window;
@@ -26,9 +25,7 @@ static int16_t get_cell_height(MenuLayer *ml, MenuIndex *idx, void *ctx) { retur
 
 static void select_click(MenuLayer *ml, MenuIndex *idx, void *ctx) {
   g_state.filter.alpha = (uint8_t)idx->row;
-  g_state.list_offset  = 0;
-  card_list_window_push();
-  comm_request_search(&g_state.filter, 0);
+  filter_letter_window_push();
 }
 
 static void window_load(Window *w) {

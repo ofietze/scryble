@@ -18,6 +18,8 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
   switch ((AppStatus)status_t->value->int32) {
     case STATUS_CARD: {
       Tuple *t;
+      if ((t = dict_find(iter, MESSAGE_KEY_CardId)))
+        strncpy(g_state.card.id, t->value->cstring, sizeof(g_state.card.id) - 1);
       if ((t = dict_find(iter, MESSAGE_KEY_CardName)))
         strncpy(g_state.card.name, t->value->cstring, sizeof(g_state.card.name) - 1);
       if ((t = dict_find(iter, MESSAGE_KEY_CardManaCost)))
@@ -117,6 +119,10 @@ void comm_request_search(const FilterState *f, uint32_t offset) {
   dict_write_uint8(iter,  MESSAGE_KEY_FilterCmc,   f->cmc);
   dict_write_uint8(iter,  MESSAGE_KEY_FilterType,  f->type);
   dict_write_uint8(iter,  MESSAGE_KEY_FilterAlpha, f->alpha);
+  if (f->letter) {
+    char buf[2] = { f->letter, '\0' };
+    dict_write_cstring(iter, MESSAGE_KEY_FilterLetter, buf);
+  }
   dict_write_uint32(iter, MESSAGE_KEY_ListOffset,  offset);
   app_message_outbox_send();
 }

@@ -17,6 +17,7 @@
     "FilterCmc":     2,
     "FilterType":    3,
     "FilterAlpha":   4,
+    "FilterLetter":  31,
     "ListOffset":    5,
     "CardId":        6,
     "Status":        7,
@@ -45,6 +46,12 @@
     "ImageData":          30
   },
   "resources": {
-    "media": []
+    "media": [
+      {
+        "type": "png",
+        "name": "LOGO",
+        "file": "logo.png"
+      }
+    ]
   }
 }
