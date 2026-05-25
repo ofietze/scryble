@@ -25,22 +25,6 @@ var ALPHA_RANGES = [
   ['A','D'], ['E','H'], ['I','L'], ['M','P'], ['Q','T'], ['U','Z']
 ];
 
-// ── Image proxy (optional, used on iOS) ────────────────────────────────────
-// The watch displays cropped artwork at exactly 200×75 in Pebble's 2-bit-per-channel
-// palette. On Android the Pebble JS environment is a WebView and has Canvas + Image,
-// so we render & quantize locally (see fetchAndSendImage below). On iOS the JS
-// environment is JavaScriptCore with no DOM — neither Image nor Canvas exist.
-//
-// The recommended iOS approach is a tiny stateless image-proxy worker (Cloudflare
-// Workers, fly.io, or Vercel — all free for this kind of traffic) that:
-//   1. Takes ?url=<scryfall_art_crop> as input
-//   2. Fetches, resizes to 200×75, quantizes each pixel to 0xC0|(R<<4)|(G<<2)|B
-//   3. Returns raw bytes as application/octet-stream
-//
-// Drop your worker URL below to enable iOS art. Leave empty to fall back to
-// the diagonal-hatch placeholder used by card_view_window.
-var IMAGE_PROXY_URL = '';   // e.g. 'https://mtg-pebble.example.workers.dev/quantize'
-
 // ── Card cache ─────────────────────────────────────────────────────────────
 var cardCache = [];
 var nextPageUrl = null;
@@ -88,15 +72,88 @@ function getBinary(url, cb) {
 }
 
 // ── Image pipeline ─────────────────────────────────────────────────────────
-var ART_W = 200;
-var ART_H = 75;
+var jpeg       = require('jpeg-js');
+var ART_W      = 200;
+var ART_H      = 146;
 var CHUNK_SIZE = 1700;
 
-function quantizePixel(r, g, b) {
-  var rq = Math.min(3, Math.round(r / 85));
-  var gq = Math.min(3, Math.round(g / 85));
-  var bq = Math.min(3, Math.round(b / 85));
-  return 0xC0 | (rq << 4) | (gq << 2) | bq;
+// sRGB → linear LUT — avoids repeated Math.pow in the inner loop
+var SRGB_TO_LIN = (function () {
+  var t = new Array(256);
+  for (var i = 0; i < 256; i++) {
+    var c = i / 255;
+    t[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  }
+  return t;
+}());
+
+function linToSrgb255(c) {
+  if (c <= 0) return 0;
+  if (c >= 1) return 255;
+  return Math.round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055));
+}
+
+// Center-fill crop + linear-light bilinear downsample + Floyd-Steinberg dither → Pebble 8-bit.
+function decodeAndResize(jpegBytes) {
+  var img  = jpeg.decode(jpegBytes, { useTArray: true });
+  var srcW = img.width, srcH = img.height, rgba = img.data;
+
+  var srcAspect = srcW / srcH, dstAspect = ART_W / ART_H;
+  var sx, sy, sw, sh;
+  if (srcAspect > dstAspect) {
+    sh = srcH; sw = Math.round(sh * dstAspect);
+    sx = Math.round((srcW - sw) / 2); sy = 0;
+  } else {
+    sw = srcW; sh = Math.round(sw / dstAspect);
+    sx = 0; sy = Math.round((srcH - sh) / 2);
+  }
+
+  // Bilinear downsample into float buffers so F-S can accumulate error
+  var n = ART_W * ART_H;
+  var fr = new Array(n), fg = new Array(n), fb = new Array(n);
+  for (var dy = 0; dy < ART_H; dy++) {
+    for (var dx = 0; dx < ART_W; dx++) {
+      var srcX = sx + dx * sw / ART_W;
+      var srcY = sy + dy * sh / ART_H;
+      var x0 = Math.floor(srcX), x1 = Math.min(x0 + 1, srcW - 1);
+      var y0 = Math.floor(srcY), y1 = Math.min(y0 + 1, srcH - 1);
+      var wu = srcX - x0, wv = srcY - y0;
+      var w00=(1-wu)*(1-wv), w10=wu*(1-wv), w01=(1-wu)*wv, w11=wu*wv;
+      var i00=(y0*srcW+x0)*4, i10=(y0*srcW+x1)*4, i01=(y1*srcW+x0)*4, i11=(y1*srcW+x1)*4;
+      var idx = dy*ART_W+dx;
+      fr[idx] = linToSrgb255(SRGB_TO_LIN[rgba[i00  ]]*w00 + SRGB_TO_LIN[rgba[i10  ]]*w10 + SRGB_TO_LIN[rgba[i01  ]]*w01 + SRGB_TO_LIN[rgba[i11  ]]*w11);
+      fg[idx] = linToSrgb255(SRGB_TO_LIN[rgba[i00+1]]*w00 + SRGB_TO_LIN[rgba[i10+1]]*w10 + SRGB_TO_LIN[rgba[i01+1]]*w01 + SRGB_TO_LIN[rgba[i11+1]]*w11);
+      fb[idx] = linToSrgb255(SRGB_TO_LIN[rgba[i00+2]]*w00 + SRGB_TO_LIN[rgba[i10+2]]*w10 + SRGB_TO_LIN[rgba[i01+2]]*w01 + SRGB_TO_LIN[rgba[i11+2]]*w11);
+    }
+  }
+
+  // Floyd-Steinberg: quantise then spread error to right/below neighbours
+  var pixels = new Uint8Array(n);
+  for (var dy = 0; dy < ART_H; dy++) {
+    for (var dx = 0; dx < ART_W; dx++) {
+      var idx = dy*ART_W+dx;
+      var rv = Math.min(255, Math.max(0, fr[idx]));
+      var gv = Math.min(255, Math.max(0, fg[idx]));
+      var bv = Math.min(255, Math.max(0, fb[idx]));
+
+      var rq = Math.min(3, Math.max(0, Math.round(rv / 85)));
+      var gq = Math.min(3, Math.max(0, Math.round(gv / 85)));
+      var bq = Math.min(3, Math.max(0, Math.round(bv / 85)));
+
+      pixels[idx] = 0xC0 | (rq << 4) | (gq << 2) | bq;
+
+      var er = rv - rq*85, eg = gv - gq*85, eb = bv - bq*85;
+      if (dx+1 < ART_W) {
+        fr[idx+1] += er*7/16; fg[idx+1] += eg*7/16; fb[idx+1] += eb*7/16;
+      }
+      if (dy+1 < ART_H) {
+        if (dx > 0) { fr[idx+ART_W-1] += er*3/16; fg[idx+ART_W-1] += eg*3/16; fb[idx+ART_W-1] += eb*3/16; }
+        fr[idx+ART_W] += er*5/16; fg[idx+ART_W] += eg*5/16; fb[idx+ART_W] += eb*5/16;
+        if (dx+1 < ART_W) { fr[idx+ART_W+1] += er/16; fg[idx+ART_W+1] += eg/16; fb[idx+ART_W+1] += eb/16; }
+      }
+    }
+  }
+  return pixels;
 }
 
 function sendImageChunks(pixels) {
@@ -120,67 +177,16 @@ function sendImageChunks(pixels) {
   next();
 }
 
-function hasCanvas() {
-  return typeof window !== 'undefined' && typeof document !== 'undefined' &&
-         typeof Image === 'function';
-}
-
-function fetchViaCanvas(artUrl) {
-  var img = new Image();
-  img.crossOrigin = 'Anonymous';
-  img.onload = function () {
-    try {
-      // Center-fill crop: scale to fill ART_W×ART_H, crop excess.
-      var srcAspect = img.width / img.height;
-      var dstAspect = ART_W / ART_H;
-      var sx, sy, sw, sh;
-      if (srcAspect > dstAspect) {
-        sh = img.height; sw = Math.round(sh * dstAspect);
-        sx = Math.round((img.width - sw) / 2); sy = 0;
-      } else {
-        sw = img.width; sh = Math.round(sw / dstAspect);
-        sx = 0; sy = Math.round((img.height - sh) / 2);
-      }
-      var canvas = document.createElement('canvas');
-      canvas.width = ART_W; canvas.height = ART_H;
-      var ctx = canvas.getContext('2d');
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, ART_W, ART_H);
-      var rgba = ctx.getImageData(0, 0, ART_W, ART_H).data;
-
-      var pixels = new Uint8Array(ART_W * ART_H);
-      for (var i = 0; i < ART_W * ART_H; i++) {
-        pixels[i] = quantizePixel(rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]);
-      }
-      sendImageChunks(pixels);
-    } catch (e) {
-      console.log('Image process error: ' + e);
-    }
-  };
-  img.onerror = function () { console.log('Image load failed for: ' + artUrl); };
-  img.src = artUrl;
-}
-
-function fetchViaProxy(artUrl) {
-  var proxyUrl = IMAGE_PROXY_URL + '?url=' + encodeURIComponent(artUrl);
-  getBinary(proxyUrl, function (err, bytes) {
-    if (err) { console.log('Image proxy error: ' + err); return; }
-    if (bytes.length !== ART_W * ART_H) {
-      console.log('Proxy returned ' + bytes.length + ' bytes, expected ' + (ART_W * ART_H));
-      return;
-    }
-    sendImageChunks(bytes);
-  });
-}
-
 function fetchAndSendImage(artUrl) {
   if (!artUrl) return;
-  if (hasCanvas()) {
-    fetchViaCanvas(artUrl);
-  } else if (IMAGE_PROXY_URL) {
-    fetchViaProxy(artUrl);
-  } else {
-    console.log('Image: no Canvas (iOS) and no IMAGE_PROXY_URL configured — skipping.');
-  }
+  getBinary(artUrl, function (err, bytes) {
+    if (err) { console.log('Image fetch error: ' + err); return; }
+    try {
+      sendImageChunks(decodeAndResize(bytes));
+    } catch (e) {
+      console.log('Image decode error: ' + e);
+    }
+  });
 }
 
 // ── Senders ────────────────────────────────────────────────────────────────
@@ -305,7 +311,7 @@ function handleGetCard(cardId) {
 
 // ── Entry points ───────────────────────────────────────────────────────────
 Pebble.addEventListener('ready', function () {
-  console.log('MTG Wiki JS ready');
+  console.log('Scryble JS ready');
 });
 
 Pebble.addEventListener('appmessage', function (e) {

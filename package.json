@@ -1,0 +1,8 @@
+{
+  "name": "scryble",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "jpeg-js": "^0.2.0"
+  }
+}

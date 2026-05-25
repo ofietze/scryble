@@ -1,41 +1,23 @@
-# Magic Pebble
+# Scryble
 
-*A Magic: The Gathering card viewer for your wrist.*
+*A Magic: The Gathering card viewer for Pebble.*
 
 ---
 
-It has long been held — by people who hold things, and occasionally by the
-sort of people who hold opinions about people who hold things — that the
-single greatest obstacle to looking up the oracle text of *Dryad Arbor*
-mid-conversation is having to pull out one's phone like some sort of common
-civilian. This problem, which has plagued exactly seventeen people in the
-recorded history of the universe, is now solved. By a watch.
+You don't need this. Your phone can look up cards just fine. But when a buddy
+mentions a card you've never heard of and you want to pull it up — or save it
+before you forget the name — it's rather fun to do so from your wrist.
 
-Magic Pebble runs on the Pebble Time 2, a wristwatch which, by an
-extraordinary coincidence of historical accident, has 200×228 pixels with
-which to render the lavish illustrations of an entire fantasy multiverse.
-This works approximately as well as you would imagine. The artwork is
-squinted at rather than admired; the oracle text scrolls past in a font
-slightly smaller than the patience of the average reader; and the mana
-symbols are rendered as small coloured circles.
-
-You cannot play Magic from this watch. Let us be very clear about that.
-You cannot tap your wrist to declare an attacker, you cannot resolve the
-stack by tilting it sideways, and pressing Select during your opponent's
-upkeep will simply navigate to the next menu, which is not — despite
-appearances — a legal game action. What you *can* do is browse some thirty
-thousand cards, save a small selection of them into a "Collection" so you can
-remember that card your buddy tells you about and occasionally produce a card you
-had forgotten existed at precisely the moment when nobody asked. This is,
-on balance, almost certainly enough.
-
-So: why? Because it's possible and someone had to.
+Scryble only runs on the Pebble Time 2. The artwork is squinted at rather than
+admired, the oracle text scrolls in a font slightly smaller than ideal, and the
+mana symbols are small coloured circles. You cannot play Magic from this watch.
+What you *can* do is browse over thirty thousand cards and save a handful to an
+on-watch collection. That turns out to be enough.
 
 ## Features
 
-- **Random card** — one of roughly 30,000 cards, served up at random.
+- **Random card** — one of ~31,700 unique cards (Scryfall, today), served up at random.
 - **Browse by filter** — pick a colour, then a mana value, then a card type, then a letter range, then the *exact* letter. The Scryfall API does the heavy lifting; you do the heavy scrolling.
-- **Card art** — yes, on Android. On iOS, the Pebble JS runtime does not provide a Canvas, so the art panel falls back to a tasteful diagonal hatch (see the iOS notes in `src/pkjs/index.js`).
 - **Collection** — save cards you encounter into a small list on the watch. Press Select on the card view to add or remove; the list persists across launches.
 
 ## Screenshots
@@ -44,12 +26,10 @@ So: why? Because it's possible and someone had to.
 ![Card view](docs/screenshots/card-view.png)
 ![Browse filters](docs/screenshots/browse-filters.png)
 
-*(Screenshots forthcoming — drop yours into `docs/screenshots/`.)*
-
 ## Building
 
 ```bash
-pebble build                       # produces build/magic-pebble.pbw
+pebble build                       # produces build/scryble.pbw
 pebble install --emulator emery    # run in the emery (Pebble Time 2) emulator
 # or, with a real watch paired to your phone:
 pebble install --phone <phone-ip>
@@ -62,6 +42,10 @@ The project uses the Pebble SDK 3 WAF build system. Resources are declared in `a
 - Pebble SDK 3 (`pebble` CLI) with the `emery` platform installed
 - A Pebble Time 2 (real or emulated)
 - The Pebble companion app on your phone, with network access — the watch itself never talks to the internet, the phone proxies all Scryfall calls
+
+## Known limitations
+
+- **Double-faced cards** (transform, MDFC, etc.) currently show the placeholder art instead of the front face. Scryfall stores image URIs under `card_faces[0].image_uris` for these, and the pkjs companion only reads top-level `image_uris.art_crop`. Fix in `src/pkjs/index.js` (`cacheCard`).
 
 ## Credits
 

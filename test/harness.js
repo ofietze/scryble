@@ -25,7 +25,7 @@ global.XMLHttpRequest = XMLHttpRequest;
 const _listeners = {};
 let _capturedCardId = null;
 
-const STATUS_TAG = { 0: 'CARD', 1: 'LIST', 2: 'LOADING', 3: 'ERROR' };
+const STATUS_TAG = { 0: 'CARD', 1: 'LIST', 3: 'ERROR', 4: 'IMAGE_CHUNK' };
 
 function printMessage(msg) {
   const tag = STATUS_TAG[msg.Status] ?? `status=${msg.Status}`;

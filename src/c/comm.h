@@ -10,7 +10,6 @@ typedef enum {
 typedef enum {
   STATUS_CARD        = 0,
   STATUS_LIST        = 1,
-  STATUS_LOADING     = 2,
   STATUS_ERROR       = 3,
   STATUS_IMAGE_CHUNK = 4,
 } AppStatus;

@@ -1,8 +1,8 @@
 {
   "uuid": "0e7e5867-9948-402d-aadf-e1210c56eed4",
-  "shortName": "MTG Wiki",
-  "longName": "MTG Card Wiki",
-  "companyName": "magic-pebble",
+  "shortName": "Scryble",
+  "longName": "Scryble — MTG Card Viewer",
+  "companyName": "scryble",
   "versionLabel": "1.0.0",
   "sdkVersion": "3",
   "targetPlatforms": ["emery"],

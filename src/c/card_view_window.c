@@ -9,7 +9,7 @@
 #define PT_W       46
 #define PT_H       22
 #define ART_W      200
-#define ART_H       75
+#define ART_H      146
 
 #define MQ_TICK_MS      25
 #define MQ_DELAY_TICKS  32   // 800 ms
@@ -19,7 +19,7 @@
 
 // Computed dynamically in window_load from the actual screen size
 static int s_w, s_h;
-static int s_header_h, s_art_h, s_type_h, s_scroll_y, s_scroll_h;
+static int s_header_h, s_type_h, s_scroll_h;
 
 static Window      *s_window;
 static Layer       *s_header_layer;
@@ -186,7 +186,7 @@ static void header_draw(Layer *layer, GContext *ctx) {
   if (s_title_max > 0) {
     // Marquee mode: draw with overflow=Fill, offsetting x left.
     GRect name_rect = GRect(4 - s_title_offset,
-                            (b.size.h - 26) / 2,
+                            (b.size.h - 30) / 2,
                             s_title_text_w + 20,
                             26);
     graphics_draw_text(ctx, g_state.card.name,
@@ -199,7 +199,7 @@ static void header_draw(Layer *layer, GContext *ctx) {
     graphics_context_set_fill_color(ctx, bg);
     graphics_fill_rect(ctx, mask, 0, GCornerNone);
   } else {
-    GRect name_rect = GRect(4, (b.size.h - 26) / 2, avail_w, 26);
+    GRect name_rect = GRect(4, (b.size.h - 30) / 2, avail_w, 26);
     graphics_draw_text(ctx, g_state.card.name,
                        fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
                        name_rect, GTextOverflowModeTrailingEllipsis,
@@ -393,10 +393,10 @@ void card_view_window_on_card(void) {
            is_creature ? "\n\n\n\n" : "\n\n");
   text_layer_set_text(s_text_layer, oracle_buf);
 
-  // Expand height before measuring so content_size isn't capped
-  layer_set_frame(text_layer_get_layer(s_text_layer), GRect(4, 2, s_w - 8, 4000));
+  int text_y = ART_H + s_type_h + 2;
+  layer_set_frame(text_layer_get_layer(s_text_layer), GRect(4, text_y, s_w - 8, 4000));
   GSize text_size = text_layer_get_content_size(s_text_layer);
-  GRect text_frame = GRect(4, 2, s_w - 8, text_size.h + 4);
+  GRect text_frame = GRect(4, text_y, s_w - 8, text_size.h + 4);
   layer_set_frame(text_layer_get_layer(s_text_layer), text_frame);
   scroll_layer_set_content_size(s_scroll_layer,
                                 GSize(s_w, text_frame.origin.y + text_frame.size.h));
@@ -457,48 +457,43 @@ static void window_load(Window *w) {
   s_h = bounds.size.h;
   s_loaded = false;
 
-  s_header_h = s_h * 15 / 100;   // ~15%
-  s_art_h    = s_h * 33 / 100;   // ~33%
-  s_type_h   = s_h * 11 / 100;   // ~11%
-  s_scroll_y = s_header_h + s_art_h + s_type_h;
-  s_scroll_h = s_h - s_scroll_y;
+  s_header_h = 30;
+  s_type_h   = s_h * 11 / 100;
+  s_scroll_h = s_h - s_header_h;
 
   s_header_layer = layer_create(GRect(0, 0, s_w, s_header_h));
   layer_set_update_proc(s_header_layer, header_draw);
   layer_add_child(root, s_header_layer);
 
-  s_art_layer = layer_create(GRect(0, s_header_h, s_w, s_art_h));
-  layer_set_update_proc(s_art_layer, art_draw);
-  layer_add_child(root, s_art_layer);
-
-  s_type_layer = layer_create(GRect(0, s_header_h + s_art_h, s_w, s_type_h));
-  layer_set_update_proc(s_type_layer, type_draw);
-  layer_add_child(root, s_type_layer);
-
-  s_scroll_layer = scroll_layer_create(GRect(0, s_scroll_y, s_w, s_scroll_h));
-  scroll_layer_set_content_size(s_scroll_layer, GSize(s_w, s_scroll_h));
+  s_scroll_layer = scroll_layer_create(GRect(0, s_header_h, s_w, s_scroll_h));
+  scroll_layer_set_content_size(s_scroll_layer, GSize(s_w, ART_H + s_type_h));
   scroll_layer_set_callbacks(s_scroll_layer, (ScrollLayerCallbacks){
     .content_offset_changed_handler = on_scroll,
   });
 
-  s_text_layer = text_layer_create(GRect(4, 2, s_w - 8, s_scroll_h));
+  s_art_layer = layer_create(GRect(0, 0, s_w, ART_H));
+  layer_set_update_proc(s_art_layer, art_draw);
+  scroll_layer_add_child(s_scroll_layer, s_art_layer);
+
+  s_type_layer = layer_create(GRect(0, ART_H, s_w, s_type_h));
+  layer_set_update_proc(s_type_layer, type_draw);
+  scroll_layer_add_child(s_scroll_layer, s_type_layer);
+
+  s_text_layer = text_layer_create(GRect(4, ART_H + s_type_h + 2, s_w - 8, s_scroll_h));
   text_layer_set_font(s_text_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18));
   text_layer_set_overflow_mode(s_text_layer, GTextOverflowModeWordWrap);
   text_layer_set_text(s_text_layer, "");
   scroll_layer_add_child(s_scroll_layer, text_layer_get_layer(s_text_layer));
   layer_add_child(root, scroll_layer_get_layer(s_scroll_layer));
 
-  // Put our own click handler on the window: keeps the scroll layer's up/down
-  // bindings but overrides SELECT to toggle collection membership.
   window_set_click_config_provider(w, click_config_provider);
 
-  // P/T pinned flush in the bottom-right corner
   s_pt_layer = layer_create(GRect(s_w - PT_W, s_h - PT_H, PT_W, PT_H));
   layer_set_update_proc(s_pt_layer, pt_draw);
   layer_set_hidden(s_pt_layer, true);
   layer_add_child(root, s_pt_layer);
 
-  s_loading_layer = text_layer_create(GRect(0, s_scroll_y, s_w, s_scroll_h));
+  s_loading_layer = text_layer_create(GRect(0, s_header_h, s_w, s_scroll_h));
   text_layer_set_text(s_loading_layer, "Loading...");
   text_layer_set_text_alignment(s_loading_layer, GTextAlignmentCenter);
   text_layer_set_font(s_loading_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
