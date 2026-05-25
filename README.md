@@ -22,9 +22,9 @@ on-watch collection. That turns out to be enough.
 
 ## Screenshots
 
-![Main menu](docs/screenshots/main-menu.png)
-![Card view](docs/screenshots/card-view.png)
-![Browse filters](docs/screenshots/browse-filters.png)
+![Main menu](docs/screenshots/main-menu.jpeg)
+![Card view](docs/screenshots/card-view.jpeg)
+![Browse filters](docs/screenshots/mana-select.jpeg)
 
 ## Building
 
